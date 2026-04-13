@@ -8,11 +8,8 @@ RUN npm ci
 
 COPY . .
 
-# Build Vite frontend
-RUN npm run build -- --outDir dist
-
-# Compile Express server
-RUN npx tsc -p tsconfig.server.json
+# Build Vite frontend + compile Express server
+RUN ./node_modules/.bin/vite build && ./node_modules/.bin/tsc -p tsconfig.server.json
 
 # Stage 2: Production runtime
 FROM node:20-slim AS runner
