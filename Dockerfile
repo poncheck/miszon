@@ -3,6 +3,9 @@ FROM node:20 AS builder
 
 WORKDIR /app
 
+# Wymagane żeby npm ci instalowało devDependencies (vite, tsc)
+ENV NODE_ENV=development
+
 COPY package*.json ./
 RUN npm ci
 
