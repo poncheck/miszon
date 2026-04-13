@@ -1,10 +1,12 @@
+version: "3.9"
+
 services:
   mission-control:
     build: .
     ports:
       - "3000:3000"
     volumes:
-      - "${HOME}/.openclaw/workspace/calendar:/app/data/events"
+      - "/root/.openclaw/workspace/calendar:/app/data/events"
     environment:
       - NODE_ENV=production
       - WS_URL=ws://host.docker.internal:18789
