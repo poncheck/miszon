@@ -1,0 +1,15 @@
+services:
+  mission-control:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - "${HOME}/.openclaw/workspace/calendar:/app/data/events"
+    environment:
+      - NODE_ENV=production
+      - WS_URL=ws://host.docker.internal:18789
+      - PORT=3000
+      - EVENTS_DIR=/app/data/events
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
