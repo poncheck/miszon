@@ -3,19 +3,19 @@ FROM node:20 AS builder
 
 WORKDIR /app
 
-# Wymuś instalację devDependencies niezależnie od NODE_ENV na hoście
 ENV NODE_ENV=development
 
-COPY package*.json ./
-RUN npm install --include=dev
+# Kopiujemy TYLKO package.json — bez package-lock.json
+# (lockfile z macOS powoduje problemy z devDependencies na Linuxie)
+COPY package.json ./
+RUN npm install
 
-# Weryfikacja — build się wywali z jasnym błędem jeśli vite nie istnieje
-RUN ls node_modules/.bin/vite && echo "✓ vite found" && \
-    ls node_modules/.bin/tsc  && echo "✓ tsc found"
+# Weryfikacja
+RUN ls node_modules/.bin/vite && echo "✓ vite ok" && \
+    ls node_modules/.bin/tsc  && echo "✓ tsc ok"
 
 COPY . .
 
-# Build Vite frontend + compile Express server
 RUN node_modules/.bin/vite build && node_modules/.bin/tsc -p tsconfig.server.json
 
 # Stage 2: Production runtime
