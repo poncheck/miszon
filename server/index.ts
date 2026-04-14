@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 const WS_URL = process.env.WS_URL ?? 'ws://localhost:18789'
+const WS_TOKEN = process.env.WS_TOKEN ?? ''
 const isProd = process.env.NODE_ENV === 'production'
 
 app.use(cors())
@@ -18,7 +19,7 @@ app.use(express.json())
 // Runtime config for frontend — injects WS_URL without baking it into the JS bundle
 app.get('/config.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
-  res.send(`window.__CONFIG__ = ${JSON.stringify({ wsUrl: WS_URL })};`)
+  res.send(`window.__CONFIG__ = ${JSON.stringify({ wsUrl: WS_URL, wsToken: WS_TOKEN })};`)
 })
 
 // API routes

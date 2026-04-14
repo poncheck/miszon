@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
-import { WS_URL } from '../lib/constants'
+import { WS_URL, WS_TOKEN } from '../lib/constants'
 import type { GatewayMessage, ChatMessage } from '../types'
 
 function parseGatewayMessage(raw: string): GatewayMessage | null {
@@ -33,6 +33,11 @@ export function useGatewaySocket() {
     socketRef.current = ws
 
     ws.onopen = () => {
+      // Send auth token immediately — OpenClaw gateway requires it before any other message
+      if (WS_TOKEN) {
+        ws.send(JSON.stringify({ type: 'auth', token: WS_TOKEN }))
+      }
+
       setStatus('connected')
       reconnectDelay.current = 1000
 
