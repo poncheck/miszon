@@ -5,15 +5,12 @@ services:
     build:
       context: .
       network: host
-    ports:
-      - "8080:3000"
+    network_mode: host
     volumes:
       - "/root/.openclaw/workspace/calendar:/app/data/events"
     environment:
       - NODE_ENV=production
-      - WS_URL=ws://host.docker.internal:18789
+      - WS_URL=ws://localhost:18789
       - PORT=3000
       - EVENTS_DIR=/app/data/events
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
