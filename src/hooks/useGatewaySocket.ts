@@ -29,15 +29,11 @@ export function useGatewaySocket() {
     if (unmounted.current) return
 
     setStatus('connecting')
-    const ws = new WebSocket(WS_URL)
+    const wsUrl = WS_TOKEN ? `${WS_URL}?token=${encodeURIComponent(WS_TOKEN)}` : WS_URL
+    const ws = new WebSocket(wsUrl)
     socketRef.current = ws
 
     ws.onopen = () => {
-      // Send auth token immediately — OpenClaw gateway requires it before any other message
-      if (WS_TOKEN) {
-        ws.send(JSON.stringify({ type: 'auth', token: WS_TOKEN }))
-      }
-
       setStatus('connected')
       reconnectDelay.current = 1000
 
