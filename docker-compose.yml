@@ -6,7 +6,7 @@ services:
       context: .
       network: host
     ports:
-      - "3000:3000"
+      - "8080:3000"
     volumes:
       - "/root/.openclaw/workspace/calendar:/app/data/events"
     environment:
