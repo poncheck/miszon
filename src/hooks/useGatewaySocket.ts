@@ -29,8 +29,7 @@ export function useGatewaySocket() {
     if (unmounted.current) return
 
     setStatus('connecting')
-    const wsUrl = WS_TOKEN ? `${WS_URL}?token=${encodeURIComponent(WS_TOKEN)}` : WS_URL
-    const ws = new WebSocket(wsUrl)
+    const ws = new WebSocket(WS_URL)
     socketRef.current = ws
 
     ws.onopen = () => {
