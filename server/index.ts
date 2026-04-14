@@ -26,7 +26,7 @@ app.use('/api/events', eventsRouter)
 
 // Serve static Vite build in production
 if (isProd) {
-  const distPath = path.join(__dirname, '..', 'dist')
+  const distPath = path.join(__dirname, '..', '..', 'dist')
   app.use(express.static(distPath))
   app.get('*', (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'))
