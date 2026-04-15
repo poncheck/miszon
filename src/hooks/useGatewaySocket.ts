@@ -1,18 +1,26 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
-import { getWsUrl, getWsToken } from '../lib/constants'
+import { getWsUrl } from '../lib/constants'
 import type { GatewayMessage, ChatMessage } from '../types'
+
+const DEVICE_TOKEN_KEY = 'openclaw_device_token'
+const DEVICE_NAME = 'Mission Control'
+
+function getDeviceToken(): string | null {
+  return localStorage.getItem(DEVICE_TOKEN_KEY)
+}
+
+function saveDeviceToken(token: string) {
+  localStorage.setItem(DEVICE_TOKEN_KEY, token)
+}
 
 function parseGatewayMessage(raw: string): GatewayMessage | null {
   try {
     const msg = JSON.parse(raw)
-    // Log in dev to help identify actual OpenClaw wire format
-    if (import.meta.env.DEV) {
-      console.debug('[OpenClaw WS]', msg)
-    }
+    // Loguj wszystkie wiadomości żeby poznać protokół
+    console.debug('[OpenClaw WS ←]', msg)
     return msg as GatewayMessage
   } catch {
-    // Plain text response fallback
     return { type: 'message', content: raw }
   }
 }
@@ -33,23 +41,18 @@ export function useGatewaySocket() {
     socketRef.current = ws
 
     ws.onopen = () => {
-      const token = getWsToken()
-      if (token) {
-        // Próba 1: prosty format {type, token}
-        ws.send(JSON.stringify({ type: 'auth', token }))
-        // Próba 2: RPC format z id — wysyłamy po 100ms jeśli pierwsze nie zadziała
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              id: crypto.randomUUID(),
-              method: 'auth',
-              params: { token }
-            }))
-          }
-        }, 100)
+      const deviceToken = getDeviceToken()
+
+      if (deviceToken) {
+        // Mamy device token z poprzedniego parowania — uwierzytelnij
+        console.debug('[OpenClaw WS →] auth', { token: deviceToken.slice(0, 8) + '...' })
+        ws.send(JSON.stringify({ type: 'auth', token: deviceToken }))
+      } else {
+        // Brak device tokena — zainicjuj parowanie
+        console.debug('[OpenClaw WS →] pair request')
+        ws.send(JSON.stringify({ type: 'pair', name: DEVICE_NAME }))
       }
 
-      setStatus('connected')
       reconnectDelay.current = 1000
 
       heartbeatInterval.current = setInterval(() => {
@@ -67,10 +70,47 @@ export function useGatewaySocket() {
         case 'pong':
           break
 
-        case 'message': {
-          const id = crypto.randomUUID()
+        // Odpowiedź po auth — połączenie ustanowione
+        case 'ready':
+        case 'connected':
+        case 'session':
+          setStatus('connected')
+          if (msg.conversation_id) setConversationId(msg.conversation_id)
+          break
+
+        // Parowanie zatwierdzone — gateway odesłał device token
+        case 'paired':
+        case 'pair_ok': {
+          const token = (msg as unknown as Record<string, unknown>).token as string | undefined
+          if (token) {
+            saveDeviceToken(token)
+            console.debug('[OpenClaw WS] Device paired, token saved')
+            // Uwierzytelnij się nowym tokenem
+            ws.send(JSON.stringify({ type: 'auth', token }))
+          }
+          setStatus('connected')
+          break
+        }
+
+        // Parowanie oczekuje na zatwierdzenie przez operatora
+        case 'pair_pending':
+        case 'pending': {
+          console.debug('[OpenClaw WS] Pairing pending — run: openclaw devices approve')
           addMessage({
-            id,
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: '🔐 Oczekiwanie na zatwierdzenie parowania. Na serwerze uruchom:\n\n`openclaw devices approve`',
+            timestamp: Date.now(),
+            isStreaming: false,
+          })
+          setStatus('connecting')
+          break
+        }
+
+        case 'message': {
+          setStatus('connected')
+          addMessage({
+            id: crypto.randomUUID(),
             role: 'assistant',
             content: msg.content ?? '',
             timestamp: msg.timestamp ?? Date.now(),
@@ -82,16 +122,14 @@ export function useGatewaySocket() {
 
         case 'stream':
         case 'delta': {
-          // Check if we have an active streaming message
+          setStatus('connected')
           const state = useGatewayStore.getState()
-          const allMessages = state.messages
-        const streaming = [...allMessages].reverse().find((m: ChatMessage) => m.isStreaming)
+          const streaming = [...state.messages].reverse().find((m: ChatMessage) => m.isStreaming)
           if (streaming) {
             appendDelta(streaming.id, msg.delta ?? msg.content ?? '')
           } else {
-            const id = crypto.randomUUID()
             addMessage({
-              id,
+              id: crypto.randomUUID(),
               role: 'assistant',
               content: msg.delta ?? msg.content ?? '',
               timestamp: Date.now(),
@@ -104,16 +142,14 @@ export function useGatewaySocket() {
 
         case 'done': {
           const state = useGatewayStore.getState()
-          const allMessages = state.messages
-        const streaming = [...allMessages].reverse().find((m: ChatMessage) => m.isStreaming)
+          const streaming = [...state.messages].reverse().find((m: ChatMessage) => m.isStreaming)
           if (streaming) finalizeMessage(streaming.id)
           break
         }
 
         case 'error': {
-          const id = crypto.randomUUID()
           addMessage({
-            id,
+            id: crypto.randomUUID(),
             role: 'assistant',
             content: `⚠️ ${msg.error ?? msg.content ?? 'Unknown error'}`,
             timestamp: Date.now(),
@@ -121,6 +157,10 @@ export function useGatewaySocket() {
           })
           break
         }
+
+        default:
+          // Nieznany typ — logujemy żeby poznać protokół
+          console.debug('[OpenClaw WS] Unknown message type:', msg.type, msg)
       }
     }
 
@@ -152,6 +192,7 @@ export function useGatewaySocket() {
 
       addMessage({ id, role: 'user', content, timestamp: Date.now() })
 
+      console.debug('[OpenClaw WS →] message', content)
       ws.send(
         JSON.stringify({
           type: 'message',
@@ -165,6 +206,13 @@ export function useGatewaySocket() {
     [socketRef, addMessage]
   )
 
+  // Funkcja do resetowania parowania (czyści localStorage)
+  const resetPairing = useCallback(() => {
+    localStorage.removeItem(DEVICE_TOKEN_KEY)
+    console.debug('[OpenClaw WS] Device token cleared, reconnecting...')
+    socketRef.current?.close()
+  }, [socketRef])
+
   useEffect(() => {
     unmounted.current = false
     connect()
@@ -177,5 +225,5 @@ export function useGatewaySocket() {
     }
   }, [connect, socketRef])
 
-  return { sendMessage }
+  return { sendMessage, resetPairing }
 }
