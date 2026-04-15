@@ -1,5 +1,13 @@
 // OpenClaw device identity — Ed25519 key pair + pairing state
-// Keys are generated once and persisted in localStorage as JWK
+// Uses @noble/ed25519 (pure JS) so it works on HTTP (no secure context needed)
+
+import * as ed from '@noble/ed25519'
+import { sha512 } from '@noble/hashes/sha512'
+import { sha256 } from '@noble/hashes/sha256'
+import { bytesToHex } from '@noble/hashes/utils'
+
+// Configure noble ed25519 to use noble sha512 (no Web Crypto API required)
+ed.etc.sha512Sync = (...m: Parameters<typeof sha512>) => sha512(...m)
 
 const STORAGE_KEY = 'openclaw_mc_identity'
 const CLIENT_ID = 'mission-control'
@@ -9,73 +17,66 @@ export interface DeviceIdentity {
   instanceId: string
   deviceId: string      // SHA-256 of public key (hex, 64 chars)
   publicKeyB64: string  // base64url raw public key (32 bytes)
-  privateKeyJwk: JsonWebKey
+  privateKeyHex: string // hex-encoded 32-byte private key scalar
   deviceToken?: string
 }
 
-function b64url(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
+// --- helpers ---
+
+function randomUUID(): string {
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`
+}
+
+function b64url(bytes: Uint8Array): string {
   let binary = ''
   bytes.forEach((b) => (binary += String.fromCharCode(b)))
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
-async function sha256hex(buf: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+function hexToBytes(hex: string): Uint8Array {
+  const arr = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  }
+  return arr
 }
 
-async function generate(): Promise<DeviceIdentity> {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: 'Ed25519' },
-    true,
-    ['sign', 'verify']
-  )
-  const publicKeyRaw = await crypto.subtle.exportKey('raw', keyPair.publicKey)
-  const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey)
+// --- core ---
 
+function generate(): DeviceIdentity {
+  const privBytes = ed.utils.randomPrivateKey()          // 32 random bytes
+  const pubBytes = ed.getPublicKey(privBytes)             // 32-byte public key
+  const deviceId = bytesToHex(sha256(pubBytes))           // SHA-256 of pub key
   return {
-    instanceId: crypto.randomUUID(),
-    deviceId: await sha256hex(publicKeyRaw),
-    publicKeyB64: b64url(publicKeyRaw),
-    privateKeyJwk,
+    instanceId: randomUUID(),
+    deviceId,
+    publicKeyB64: b64url(pubBytes),
+    privateKeyHex: bytesToHex(privBytes),
   }
 }
 
-export async function getOrCreateIdentity(): Promise<DeviceIdentity & { privateKey: CryptoKey }> {
+export function getOrCreateIdentity(): DeviceIdentity {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (raw) {
     try {
-      const data = JSON.parse(raw) as DeviceIdentity
-      const privateKey = await crypto.subtle.importKey(
-        'jwk',
-        data.privateKeyJwk,
-        { name: 'Ed25519' },
-        true,
-        ['sign']
-      )
-      return { ...data, privateKey }
+      return JSON.parse(raw) as DeviceIdentity
     } catch {
-      // corrupt storage — regenerate
+      // corrupt — regenerate
     }
   }
-  const identity = await generate()
+  const identity = generate()
   localStorage.setItem(STORAGE_KEY, JSON.stringify(identity))
-  const privateKey = await crypto.subtle.importKey(
-    'jwk',
-    identity.privateKeyJwk,
-    { name: 'Ed25519' },
-    true,
-    ['sign']
-  )
-  return { ...identity, privateKey }
+  return identity
 }
 
-export async function signNonce(privateKey: CryptoKey, nonce: string): Promise<string> {
+export function signNonce(identity: DeviceIdentity, nonce: string): string {
   const msg = new TextEncoder().encode(nonce)
-  const sig = await crypto.subtle.sign('Ed25519', privateKey, msg)
+  const privBytes = hexToBytes(identity.privateKeyHex)
+  const sig = ed.sign(msg, privBytes)
   return b64url(sig)
 }
 
@@ -99,7 +100,7 @@ export function buildConnectFrame(
 ): object {
   return {
     type: 'req',
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     method: 'connect',
     params: {
       minProtocol: 3,

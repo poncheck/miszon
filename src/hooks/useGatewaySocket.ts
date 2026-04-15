@@ -7,6 +7,7 @@ import {
   buildConnectFrame,
   saveDeviceToken,
   clearIdentity,
+  type DeviceIdentity,
 } from '../lib/deviceIdentity'
 import type { GatewayMessage, ChatMessage } from '../types'
 
@@ -45,17 +46,17 @@ export function useGatewaySocket() {
       }, 30000)
 
       // Ed25519 device identity — generate or load from localStorage
-      getOrCreateIdentity().then((identity) => {
-        const nonce = crypto.randomUUID()
+      try {
+        const identity: DeviceIdentity = getOrCreateIdentity()
+        const nonce = identity.instanceId + '-' + Date.now()
         const signedAt = Date.now()
-        return signNonce(identity.privateKey, nonce).then((signature) => {
-          const frame = buildConnectFrame(identity, nonce, signedAt, signature)
-          console.debug('[OpenClaw WS →] connect', frame)
-          ws.send(JSON.stringify(frame))
-        })
-      }).catch((err) => {
+        const signature = signNonce(identity, nonce)
+        const frame = buildConnectFrame(identity, nonce, signedAt, signature)
+        console.debug('[OpenClaw WS →] connect', frame)
+        ws.send(JSON.stringify(frame))
+      } catch (err) {
         console.error('[OpenClaw WS] Failed to build connect frame:', err)
-      })
+      }
     }
 
     ws.onmessage = (event: MessageEvent) => {
