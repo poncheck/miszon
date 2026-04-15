@@ -2,7 +2,7 @@
 // All crypto (Ed25519 key gen + signing) happens server-side via /api/identity
 // Browser just fetches the signed connect frame params
 
-const CLIENT_ID = 'mission-control'
+const CLIENT_ID = 'openclaw-web'
 const CLIENT_VERSION = '0.1.0'
 
 // crypto.randomUUID() requires HTTPS — use getRandomValues() which works on HTTP too
