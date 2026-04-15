@@ -81,9 +81,8 @@ export interface SignPayloadParams {
 // Format: v2|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce
 function buildDeviceAuthPayloadV2(params: SignPayloadParams, identity: StoredIdentity): string {
   const { nonce, signedAt, clientId, clientMode, role, scopes } = params
-  // token = deviceToken if paired, else gateway auth token, else empty string
-  const WS_TOKEN = process.env.WS_TOKEN ?? ''
-  const token = identity.deviceToken || WS_TOKEN || ''
+  // token = deviceToken if paired, else empty string (URL-based auth, no auth.token in frame)
+  const token = identity.deviceToken || ''
   return [
     'v2',
     identity.deviceId,

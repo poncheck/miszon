@@ -2,6 +2,8 @@
 // All crypto (Ed25519 key gen + signing) happens server-side via /api/identity
 // Browser just fetches the signed connect frame params
 
+import { getWsToken } from './constants'
+
 const CLIENT_ID = 'openclaw-control-ui'
 const CLIENT_MODE = 'webchat'
 const CLIENT_VERSION = '0.1.0'
@@ -86,9 +88,10 @@ export function buildConnectFrame(
         nonce,
       },
       caps: ['tool-events'],
+      // auth.token must match the token used in the signature payload
       auth: identity.deviceToken
         ? { token: identity.deviceToken, deviceToken: identity.deviceToken }
-        : {},
+        : { token: getWsToken() || undefined },
       userAgent: navigator.userAgent,
       locale: navigator.language,
     },
