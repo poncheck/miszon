@@ -1,12 +1,9 @@
 // OpenClaw device identity — Ed25519 key pair + pairing state
-// Uses @noble/ed25519 (pure JS) so it works on HTTP (no secure context needed)
+// Uses @noble/curves (pure JS, no Web Crypto API needed → works on plain HTTP)
 
-import * as ed from '@noble/ed25519'
-import { sha256, sha512 } from '@noble/hashes/sha2.js'
+import { ed25519 } from '@noble/curves/ed25519.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
-
-// Configure noble ed25519 to use noble sha512 (no Web Crypto API required)
-ed.etc.sha512Sync = (...m: Parameters<typeof sha512>) => sha512(...m)
 
 const STORAGE_KEY = 'openclaw_mc_identity'
 const CLIENT_ID = 'mission-control'
@@ -16,7 +13,7 @@ export interface DeviceIdentity {
   instanceId: string
   deviceId: string      // SHA-256 of public key (hex, 64 chars)
   publicKeyB64: string  // base64url raw public key (32 bytes)
-  privateKeyHex: string // hex-encoded 32-byte private key scalar
+  privateKeyHex: string // hex-encoded 32-byte private key
   deviceToken?: string
 }
 
@@ -47,9 +44,9 @@ function hexToBytes(hex: string): Uint8Array {
 // --- core ---
 
 function generate(): DeviceIdentity {
-  const privBytes = ed.utils.randomPrivateKey()          // 32 random bytes
-  const pubBytes = ed.getPublicKey(privBytes)             // 32-byte public key
-  const deviceId = bytesToHex(sha256(pubBytes))           // SHA-256 of pub key
+  const privBytes = crypto.getRandomValues(new Uint8Array(32))
+  const pubBytes = ed25519.getPublicKey(privBytes)
+  const deviceId = bytesToHex(sha256(pubBytes))
   return {
     instanceId: randomUUID(),
     deviceId,
@@ -75,7 +72,7 @@ export function getOrCreateIdentity(): DeviceIdentity {
 export function signNonce(identity: DeviceIdentity, nonce: string): string {
   const msg = new TextEncoder().encode(nonce)
   const privBytes = hexToBytes(identity.privateKeyHex)
-  const sig = ed.sign(msg, privBytes)
+  const sig = ed25519.sign(msg, privBytes)
   return b64url(sig)
 }
 
