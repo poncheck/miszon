@@ -6,6 +6,7 @@ import {
   signNonce,
   buildConnectFrame,
   saveDeviceToken,
+  randomUUID,
 } from '../lib/deviceIdentity'
 import type { GatewayMessage, ChatMessage } from '../types'
 
@@ -39,14 +40,14 @@ export function useGatewaySocket() {
 
       heartbeatInterval.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'req', id: crypto.randomUUID(), method: 'ping', params: { timestamp: Date.now() } }))
+          ws.send(JSON.stringify({ type: 'req', id: randomUUID(), method: 'ping', params: { timestamp: Date.now() } }))
         }
       }, 30000)
 
       // Ed25519 device identity — fetch from server, sign nonce server-side
       getIdentity()
         .then((identity) => {
-          const nonce = crypto.randomUUID()
+          const nonce = randomUUID()
           return signNonce(nonce).then(({ signature, signedAt }) => {
             const frame = buildConnectFrame(identity, nonce, signedAt, signature)
             console.debug('[OpenClaw WS →] connect', frame)
@@ -77,7 +78,7 @@ export function useGatewaySocket() {
             // code 4031 = device pending approval
             if (code === 4031 || message?.toLowerCase().includes('pending')) {
               addMessage({
-                id: crypto.randomUUID(),
+                id: randomUUID(),
                 role: 'assistant',
                 content: '🔐 Oczekiwanie na zatwierdzenie parowania. Na serwerze uruchom:\n\n`openclaw devices approve`',
                 timestamp: Date.now(),
@@ -86,7 +87,7 @@ export function useGatewaySocket() {
               setStatus('connecting')
             } else {
               addMessage({
-                id: crypto.randomUUID(),
+                id: randomUUID(),
                 role: 'assistant',
                 content: `⚠️ Błąd połączenia: ${message ?? JSON.stringify(error)}`,
                 timestamp: Date.now(),
@@ -127,7 +128,7 @@ export function useGatewaySocket() {
         case 'pending': {
           console.debug('[OpenClaw WS] Pairing pending — run: openclaw devices approve')
           addMessage({
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             role: 'assistant',
             content: '🔐 Oczekiwanie na zatwierdzenie parowania. Na serwerze uruchom:\n\n`openclaw devices approve`',
             timestamp: Date.now(),
@@ -140,7 +141,7 @@ export function useGatewaySocket() {
         case 'message': {
           setStatus('connected')
           addMessage({
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             role: 'assistant',
             content: msg.content ?? '',
             timestamp: msg.timestamp ?? Date.now(),
@@ -159,7 +160,7 @@ export function useGatewaySocket() {
             appendDelta(streaming.id, msg.delta ?? msg.content ?? '')
           } else {
             addMessage({
-              id: crypto.randomUUID(),
+              id: randomUUID(),
               role: 'assistant',
               content: msg.delta ?? msg.content ?? '',
               timestamp: Date.now(),
@@ -179,7 +180,7 @@ export function useGatewaySocket() {
 
         case 'error': {
           addMessage({
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             role: 'assistant',
             content: `⚠️ ${msg.error ?? msg.content ?? 'Unknown error'}`,
             timestamp: Date.now(),
@@ -218,7 +219,7 @@ export function useGatewaySocket() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return false
 
       const state = useGatewayStore.getState()
-      const id = crypto.randomUUID()
+      const id = randomUUID()
 
       addMessage({ id, role: 'user', content, timestamp: Date.now() })
 
