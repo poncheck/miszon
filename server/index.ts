@@ -32,27 +32,16 @@ app.get('/api/identity', (_req, res) => {
 })
 
 app.post('/api/identity/sign', (req, res) => {
-  const body = req.body as {
-    nonce?: string
-    signedAt?: number
-    clientId?: string
-    clientMode?: string
-    role?: string
-    scopes?: string[]
-    platform?: string
-    deviceFamily?: string
-  }
+  const body = req.body as { nonce?: string; clientId?: string; clientMode?: string; role?: string; scopes?: string[] }
   if (!body.nonce) { res.status(400).json({ error: 'nonce required' }); return }
-  const signedAt = body.signedAt ?? Date.now()
+  const signedAt = Date.now()
   const signature = signPayload({
     nonce: body.nonce,
     signedAt,
     clientId: body.clientId ?? 'openclaw-control-ui',
-    clientMode: body.clientMode ?? 'ui',
+    clientMode: body.clientMode ?? 'webchat',
     role: body.role ?? 'operator',
     scopes: body.scopes ?? ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'],
-    platform: body.platform ?? 'web',
-    deviceFamily: body.deviceFamily ?? '',
   })
   res.json({ signature, signedAt })
 })

@@ -3,7 +3,7 @@
 // Browser just fetches the signed connect frame params
 
 const CLIENT_ID = 'openclaw-control-ui'
-const CLIENT_MODE = 'ui'
+const CLIENT_MODE = 'webchat'
 const CLIENT_VERSION = '0.1.0'
 const ROLE = 'operator'
 const SCOPES = ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing']
@@ -31,21 +31,17 @@ export async function getIdentity(): Promise<DeviceIdentity> {
 }
 
 export async function signNonce(
-  nonce: string,
-  signedAt: number
+  nonce: string
 ): Promise<{ signature: string; signedAt: number }> {
   const res = await fetch('/api/identity/sign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       nonce,
-      signedAt,
       clientId: CLIENT_ID,
       clientMode: CLIENT_MODE,
       role: ROLE,
       scopes: SCOPES,
-      platform: navigator.platform || 'web',
-      deviceFamily: '',
     }),
   })
   if (!res.ok) throw new Error('Failed to sign nonce')

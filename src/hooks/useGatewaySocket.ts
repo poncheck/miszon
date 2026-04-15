@@ -61,8 +61,8 @@ export function useGatewaySocket() {
             console.debug('[OpenClaw WS] Got challenge, nonce:', payload.nonce)
             getIdentity()
               .then((identity) =>
-                signNonce(payload.nonce, signedAt).then(({ signature }) => {
-                  const frame = buildConnectFrame(identity, payload.nonce, signedAt, signature)
+                signNonce(payload.nonce).then(({ signature, signedAt: sat }) => {
+                  const frame = buildConnectFrame(identity, payload.nonce, sat, signature)
                   console.debug('[OpenClaw WS →] connect', frame)
                   ws.send(JSON.stringify(frame))
                 })
