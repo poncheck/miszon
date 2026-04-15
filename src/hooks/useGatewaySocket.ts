@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
-import { getWsUrl } from '../lib/constants'
+import { getWsUrl, getWsToken } from '../lib/constants'
 import type { GatewayMessage, ChatMessage } from '../types'
 
 function parseGatewayMessage(raw: string): GatewayMessage | null {
@@ -33,6 +33,22 @@ export function useGatewaySocket() {
     socketRef.current = ws
 
     ws.onopen = () => {
+      const token = getWsToken()
+      if (token) {
+        // Próba 1: prosty format {type, token}
+        ws.send(JSON.stringify({ type: 'auth', token }))
+        // Próba 2: RPC format z id — wysyłamy po 100ms jeśli pierwsze nie zadziała
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              id: crypto.randomUUID(),
+              method: 'auth',
+              params: { token }
+            }))
+          }
+        }, 100)
+      }
+
       setStatus('connected')
       reconnectDelay.current = 1000
 
