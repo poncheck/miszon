@@ -4,6 +4,6 @@ declare global {
   }
 }
 
-export const WS_URL = window.__CONFIG__?.wsUrl ?? 'ws://localhost:18789'
-export const WS_TOKEN = window.__CONFIG__?.wsToken ?? ''
+export const getWsUrl = () => window.__CONFIG__?.wsUrl ?? 'ws://localhost:18789'
+export const getWsToken = () => window.__CONFIG__?.wsToken ?? ''
 export const API_BASE = '/api'

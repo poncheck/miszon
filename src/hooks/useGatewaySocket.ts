@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
-import { WS_URL, WS_TOKEN } from '../lib/constants'
+import { getWsUrl } from '../lib/constants'
 import type { GatewayMessage, ChatMessage } from '../types'
 
 function parseGatewayMessage(raw: string): GatewayMessage | null {
@@ -29,7 +29,7 @@ export function useGatewaySocket() {
     if (unmounted.current) return
 
     setStatus('connecting')
-    const ws = new WebSocket(WS_URL)
+    const ws = new WebSocket(getWsUrl())
     socketRef.current = ws
 
     ws.onopen = () => {
