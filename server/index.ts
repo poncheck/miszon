@@ -3,7 +3,7 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import eventsRouter from './routes/events.js'
-import { getPublicInfo, signNonce, saveDeviceToken, getOrCreateIdentity } from './identity.js'
+import { getPublicInfo, signPayload, saveDeviceToken, getOrCreateIdentity } from './identity.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -32,10 +32,28 @@ app.get('/api/identity', (_req, res) => {
 })
 
 app.post('/api/identity/sign', (req, res) => {
-  const { nonce } = req.body as { nonce?: string }
-  if (!nonce) { res.status(400).json({ error: 'nonce required' }); return }
-  const signedAt = Date.now()
-  const signature = signNonce(nonce)
+  const body = req.body as {
+    nonce?: string
+    signedAt?: number
+    clientId?: string
+    clientMode?: string
+    role?: string
+    scopes?: string[]
+    platform?: string
+    deviceFamily?: string
+  }
+  if (!body.nonce) { res.status(400).json({ error: 'nonce required' }); return }
+  const signedAt = body.signedAt ?? Date.now()
+  const signature = signPayload({
+    nonce: body.nonce,
+    signedAt,
+    clientId: body.clientId ?? 'openclaw-control-ui',
+    clientMode: body.clientMode ?? 'ui',
+    role: body.role ?? 'operator',
+    scopes: body.scopes ?? ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'],
+    platform: body.platform ?? 'web',
+    deviceFamily: body.deviceFamily ?? '',
+  })
   res.json({ signature, signedAt })
 })
 

@@ -68,11 +68,43 @@ export function getOrCreateIdentity(): StoredIdentity {
   return identity
 }
 
-export function signNonce(nonce: string): string {
+export interface SignPayloadParams {
+  nonce: string
+  signedAt: number
+  clientId: string
+  clientMode: string
+  role: string
+  scopes: string[]
+  platform: string
+  deviceFamily?: string
+}
+
+// OpenClaw v3 device auth payload — pipe-delimited string that gets signed
+function buildDeviceAuthPayloadV3(params: SignPayloadParams, identity: StoredIdentity): string {
+  const { nonce, signedAt, clientId, clientMode, role, scopes, platform, deviceFamily } = params
+  const token = identity.deviceToken ?? ''
+  return [
+    'v3',
+    identity.deviceId,
+    clientId,
+    clientMode,
+    role,
+    scopes.join(','),
+    String(signedAt),
+    token,
+    nonce,
+    platform,
+    deviceFamily ?? '',
+  ].join('|')
+}
+
+export function signPayload(params: SignPayloadParams): string {
   const identity = getOrCreateIdentity()
+  const payload = buildDeviceAuthPayloadV3(params, identity)
   const privateKey = crypto.createPrivateKey(identity.privateKeyPem)
-  const msg = Buffer.from(nonce, 'utf-8')
+  const msg = Buffer.from(payload, 'utf-8')
   const sig = crypto.sign(null, msg, privateKey)
+  console.debug('[identity] signing payload:', payload)
   return b64url(sig)
 }
 

@@ -2,8 +2,11 @@
 // All crypto (Ed25519 key gen + signing) happens server-side via /api/identity
 // Browser just fetches the signed connect frame params
 
-const CLIENT_ID = 'openclaw-web'
+const CLIENT_ID = 'openclaw-control-ui'
+const CLIENT_MODE = 'ui'
 const CLIENT_VERSION = '0.1.0'
+const ROLE = 'operator'
+const SCOPES = ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing']
 
 // crypto.randomUUID() requires HTTPS — use getRandomValues() which works on HTTP too
 export function randomUUID(): string {
@@ -27,11 +30,23 @@ export async function getIdentity(): Promise<DeviceIdentity> {
   return res.json() as Promise<DeviceIdentity>
 }
 
-export async function signNonce(nonce: string): Promise<{ signature: string; signedAt: number }> {
+export async function signNonce(
+  nonce: string,
+  signedAt: number
+): Promise<{ signature: string; signedAt: number }> {
   const res = await fetch('/api/identity/sign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nonce }),
+    body: JSON.stringify({
+      nonce,
+      signedAt,
+      clientId: CLIENT_ID,
+      clientMode: CLIENT_MODE,
+      role: ROLE,
+      scopes: SCOPES,
+      platform: navigator.platform || 'web',
+      deviceFamily: '',
+    }),
   })
   if (!res.ok) throw new Error('Failed to sign nonce')
   return res.json() as Promise<{ signature: string; signedAt: number }>
@@ -61,18 +76,12 @@ export function buildConnectFrame(
       client: {
         id: CLIENT_ID,
         version: CLIENT_VERSION,
-        platform: navigator.platform,
-        mode: 'webchat',
+        platform: navigator.platform || 'web',
+        mode: CLIENT_MODE,
         instanceId: identity.instanceId,
       },
-      role: 'operator',
-      scopes: [
-        'operator.admin',
-        'operator.read',
-        'operator.write',
-        'operator.approvals',
-        'operator.pairing',
-      ],
+      role: ROLE,
+      scopes: SCOPES,
       device: {
         id: identity.deviceId,
         publicKey: identity.publicKeyB64,
