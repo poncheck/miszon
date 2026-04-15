@@ -37,26 +37,14 @@ export function useGatewaySocket() {
 
     ws.onopen = () => {
       reconnectDelay.current = 1000
+      // Wait for connect.challenge from gateway — do NOT send anything yet
+      console.debug('[OpenClaw WS] Connected, waiting for challenge...')
 
       heartbeatInterval.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'req', id: randomUUID(), method: 'ping', params: { timestamp: Date.now() } }))
         }
       }, 30000)
-
-      // Ed25519 device identity — fetch from server, sign nonce server-side
-      getIdentity()
-        .then((identity) => {
-          const nonce = randomUUID()
-          return signNonce(nonce).then(({ signature, signedAt }) => {
-            const frame = buildConnectFrame(identity, nonce, signedAt, signature)
-            console.debug('[OpenClaw WS →] connect', frame)
-            ws.send(JSON.stringify(frame))
-          })
-        })
-        .catch((err) => {
-          console.error('[OpenClaw WS] Failed to build connect frame:', err)
-        })
     }
 
     ws.onmessage = (event: MessageEvent) => {
@@ -64,6 +52,25 @@ export function useGatewaySocket() {
       if (!msg) return
 
       switch (msg.type) {
+        // Gateway sends challenge first — respond with signed connect frame
+        case 'event': {
+          const evt = msg as unknown as Record<string, unknown>
+          if (evt.event === 'connect.challenge') {
+            const payload = evt.payload as { nonce: string; ts: number }
+            console.debug('[OpenClaw WS] Got challenge, signing nonce:', payload.nonce)
+            getIdentity()
+              .then((identity) =>
+                signNonce(payload.nonce).then(({ signature }) => {
+                  const frame = buildConnectFrame(identity, payload.nonce, payload.ts, signature)
+                  console.debug('[OpenClaw WS →] connect', frame)
+                  ws.send(JSON.stringify(frame))
+                })
+              )
+              .catch((err) => console.error('[OpenClaw WS] Failed to respond to challenge:', err))
+          }
+          break
+        }
+
         // JSON-RPC response to connect frame
         case 'res': {
           const res = msg as unknown as Record<string, unknown>
