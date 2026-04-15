@@ -2,12 +2,10 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
 import { getWsUrl } from '../lib/constants'
 import {
-  getOrCreateIdentity,
+  getIdentity,
   signNonce,
   buildConnectFrame,
   saveDeviceToken,
-  clearIdentity,
-  type DeviceIdentity,
 } from '../lib/deviceIdentity'
 import type { GatewayMessage, ChatMessage } from '../types'
 
@@ -45,18 +43,19 @@ export function useGatewaySocket() {
         }
       }, 30000)
 
-      // Ed25519 device identity — generate or load from localStorage
-      try {
-        const identity: DeviceIdentity = getOrCreateIdentity()
-        const nonce = identity.instanceId + '-' + Date.now()
-        const signedAt = Date.now()
-        const signature = signNonce(identity, nonce)
-        const frame = buildConnectFrame(identity, nonce, signedAt, signature)
-        console.debug('[OpenClaw WS →] connect', frame)
-        ws.send(JSON.stringify(frame))
-      } catch (err) {
-        console.error('[OpenClaw WS] Failed to build connect frame:', err)
-      }
+      // Ed25519 device identity — fetch from server, sign nonce server-side
+      getIdentity()
+        .then((identity) => {
+          const nonce = crypto.randomUUID()
+          return signNonce(nonce).then(({ signature, signedAt }) => {
+            const frame = buildConnectFrame(identity, nonce, signedAt, signature)
+            console.debug('[OpenClaw WS →] connect', frame)
+            ws.send(JSON.stringify(frame))
+          })
+        })
+        .catch((err) => {
+          console.error('[OpenClaw WS] Failed to build connect frame:', err)
+        })
     }
 
     ws.onmessage = (event: MessageEvent) => {
@@ -241,10 +240,9 @@ export function useGatewaySocket() {
     [socketRef, addMessage]
   )
 
-  // Funkcja do resetowania parowania (czyści localStorage i regeneruje tożsamość)
+  // Funkcja do resetowania parowania
   const resetPairing = useCallback(() => {
-    clearIdentity()
-    console.debug('[OpenClaw WS] Device identity cleared, reconnecting...')
+    console.debug('[OpenClaw WS] Reconnecting with fresh nonce...')
     socketRef.current?.close()
   }, [socketRef])
 

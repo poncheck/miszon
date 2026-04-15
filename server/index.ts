@@ -3,6 +3,7 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import eventsRouter from './routes/events.js'
+import { getPublicInfo, signNonce, saveDeviceToken, getOrCreateIdentity } from './identity.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -20,6 +21,29 @@ app.use(express.json())
 app.get('/config.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.send(`window.__CONFIG__ = ${JSON.stringify({ wsUrl: WS_URL, wsToken: WS_TOKEN })};`)
+})
+
+// Initialize identity on startup
+getOrCreateIdentity()
+
+// Device identity — GET public info, POST sign nonce, POST save token
+app.get('/api/identity', (_req, res) => {
+  res.json(getPublicInfo())
+})
+
+app.post('/api/identity/sign', (req, res) => {
+  const { nonce } = req.body as { nonce?: string }
+  if (!nonce) { res.status(400).json({ error: 'nonce required' }); return }
+  const signedAt = Date.now()
+  const signature = signNonce(nonce)
+  res.json({ signature, signedAt })
+})
+
+app.post('/api/identity/token', (req, res) => {
+  const { token } = req.body as { token?: string }
+  if (!token) { res.status(400).json({ error: 'token required' }); return }
+  saveDeviceToken(token)
+  res.json({ ok: true })
 })
 
 // API routes
