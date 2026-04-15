@@ -2,9 +2,8 @@
 // Uses @noble/ed25519 (pure JS) so it works on HTTP (no secure context needed)
 
 import * as ed from '@noble/ed25519'
-import { sha512 } from '@noble/hashes/sha512'
-import { sha256 } from '@noble/hashes/sha256'
-import { bytesToHex } from '@noble/hashes/utils'
+import { sha256, sha512 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 
 // Configure noble ed25519 to use noble sha512 (no Web Crypto API required)
 ed.etc.sha512Sync = (...m: Parameters<typeof sha512>) => sha512(...m)
