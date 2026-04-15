@@ -1,23 +1,18 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGatewayStore } from '../store/gatewayStore'
 import { getWsUrl } from '../lib/constants'
+import {
+  getOrCreateIdentity,
+  signNonce,
+  buildConnectFrame,
+  saveDeviceToken,
+  clearIdentity,
+} from '../lib/deviceIdentity'
 import type { GatewayMessage, ChatMessage } from '../types'
-
-const DEVICE_TOKEN_KEY = 'openclaw_device_token'
-const DEVICE_NAME = 'Mission Control'
-
-function getDeviceToken(): string | null {
-  return localStorage.getItem(DEVICE_TOKEN_KEY)
-}
-
-function saveDeviceToken(token: string) {
-  localStorage.setItem(DEVICE_TOKEN_KEY, token)
-}
 
 function parseGatewayMessage(raw: string): GatewayMessage | null {
   try {
     const msg = JSON.parse(raw)
-    // Loguj wszystkie wiadomości żeby poznać protokół
     console.debug('[OpenClaw WS ←]', msg)
     return msg as GatewayMessage
   } catch {
@@ -41,25 +36,26 @@ export function useGatewaySocket() {
     socketRef.current = ws
 
     ws.onopen = () => {
-      const deviceToken = getDeviceToken()
-
-      if (deviceToken) {
-        // Mamy device token z poprzedniego parowania — uwierzytelnij
-        console.debug('[OpenClaw WS →] auth', { token: deviceToken.slice(0, 8) + '...' })
-        ws.send(JSON.stringify({ type: 'auth', token: deviceToken }))
-      } else {
-        // Brak device tokena — zainicjuj parowanie
-        console.debug('[OpenClaw WS →] pair request')
-        ws.send(JSON.stringify({ type: 'pair', name: DEVICE_NAME }))
-      }
-
       reconnectDelay.current = 1000
 
       heartbeatInterval.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }))
+          ws.send(JSON.stringify({ type: 'req', id: crypto.randomUUID(), method: 'ping', params: { timestamp: Date.now() } }))
         }
       }, 30000)
+
+      // Ed25519 device identity — generate or load from localStorage
+      getOrCreateIdentity().then((identity) => {
+        const nonce = crypto.randomUUID()
+        const signedAt = Date.now()
+        return signNonce(identity.privateKey, nonce).then((signature) => {
+          const frame = buildConnectFrame(identity, nonce, signedAt, signature)
+          console.debug('[OpenClaw WS →] connect', frame)
+          ws.send(JSON.stringify(frame))
+        })
+      }).catch((err) => {
+        console.error('[OpenClaw WS] Failed to build connect frame:', err)
+      })
     }
 
     ws.onmessage = (event: MessageEvent) => {
@@ -67,6 +63,54 @@ export function useGatewaySocket() {
       if (!msg) return
 
       switch (msg.type) {
+        // JSON-RPC response to connect frame
+        case 'res': {
+          const res = msg as unknown as Record<string, unknown>
+          const result = res.result as Record<string, unknown> | undefined
+          const error = res.error as Record<string, unknown> | undefined
+
+          if (error) {
+            const code = error.code as number | undefined
+            const message = error.message as string | undefined
+            console.debug('[OpenClaw WS] connect error:', error)
+
+            // code 4031 = device pending approval
+            if (code === 4031 || message?.toLowerCase().includes('pending')) {
+              addMessage({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: '🔐 Oczekiwanie na zatwierdzenie parowania. Na serwerze uruchom:\n\n`openclaw devices approve`',
+                timestamp: Date.now(),
+                isStreaming: false,
+              })
+              setStatus('connecting')
+            } else {
+              addMessage({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: `⚠️ Błąd połączenia: ${message ?? JSON.stringify(error)}`,
+                timestamp: Date.now(),
+                isStreaming: false,
+              })
+              setStatus('error')
+            }
+            break
+          }
+
+          if (result) {
+            // Successful connect — save device token if returned
+            const deviceToken = result.deviceToken as string | undefined
+            if (deviceToken) {
+              saveDeviceToken(deviceToken)
+              console.debug('[OpenClaw WS] Device token saved')
+            }
+            setStatus('connected')
+            const convId = result.conversationId as string | undefined
+            if (convId) setConversationId(convId)
+          }
+          break
+        }
+
         case 'pong':
           break
 
@@ -77,20 +121,6 @@ export function useGatewaySocket() {
           setStatus('connected')
           if (msg.conversation_id) setConversationId(msg.conversation_id)
           break
-
-        // Parowanie zatwierdzone — gateway odesłał device token
-        case 'paired':
-        case 'pair_ok': {
-          const token = (msg as unknown as Record<string, unknown>).token as string | undefined
-          if (token) {
-            saveDeviceToken(token)
-            console.debug('[OpenClaw WS] Device paired, token saved')
-            // Uwierzytelnij się nowym tokenem
-            ws.send(JSON.stringify({ type: 'auth', token }))
-          }
-          setStatus('connected')
-          break
-        }
 
         // Parowanie oczekuje na zatwierdzenie przez operatora
         case 'pair_pending':
@@ -195,10 +225,14 @@ export function useGatewaySocket() {
       console.debug('[OpenClaw WS →] message', content)
       ws.send(
         JSON.stringify({
-          type: 'message',
-          content,
-          conversation_id: state.conversationId ?? undefined,
-          timestamp: Date.now(),
+          type: 'req',
+          id,
+          method: 'message',
+          params: {
+            content,
+            conversationId: state.conversationId ?? undefined,
+            timestamp: Date.now(),
+          },
         })
       )
       return true
@@ -206,10 +240,10 @@ export function useGatewaySocket() {
     [socketRef, addMessage]
   )
 
-  // Funkcja do resetowania parowania (czyści localStorage)
+  // Funkcja do resetowania parowania (czyści localStorage i regeneruje tożsamość)
   const resetPairing = useCallback(() => {
-    localStorage.removeItem(DEVICE_TOKEN_KEY)
-    console.debug('[OpenClaw WS] Device token cleared, reconnecting...')
+    clearIdentity()
+    console.debug('[OpenClaw WS] Device identity cleared, reconnecting...')
     socketRef.current?.close()
   }, [socketRef])
 
